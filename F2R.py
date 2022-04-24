@@ -1,4 +1,4 @@
-# Frame TO Reference
+# Frame To Reference
 import numpy as np
 import cv2
 
@@ -7,7 +7,6 @@ reference = cv2.imread('./Data/ReferenceFrame.png')
  
 #portiamo la maschera da BGR a scala di grigio -> da 3 canali a un canale
 reference_alpha_mask = cv2.cvtColor(cv2.imread('./Data/ObjectMask.PNG'), cv2.COLOR_BGR2GRAY)
-cv2.imshow('reference_alpha_mask', reference_alpha_mask)
 
 # splitto la reference in 3 canali
 b_r, g_r, r_r = cv2.split(reference)
@@ -22,7 +21,6 @@ rgba_r = [b_r, g_r, r_r, reference_alpha_mask]
 # faccio il merge dei 4 canali e li salvo la nuova img "ReferenceFrameAlpha"
 cv2.imwrite('./Data/ReferenceFrameAlpha.png', cv2.merge(rgba_r, 4))
 reference_rgba = cv2.imread('./Data/ReferenceFrameAlpha.png')
-#cv2.imshow('reference_rgba', reference_rgba)
 
 
 # target image - image under analysis -> (target video)
@@ -47,11 +45,10 @@ layer_rgba = cv2.imread('./Data/AugmentedLayerAlpha.PNG')
 # resize the layer so that it has the same shape of the reference image
 h_r, w_r, _ = reference_rgba.shape 
 layer_rgba_resized = layer_rgba[0:0 + h_r, 0:0 + w_r]
-#cv2.imshow('layer_resized', layer_rgba_resized)
 
 
 # create detector -> trova i keypoints
-sift = cv2.xfeatures2d.SIFT_create()
+sift = cv2.SIFT_create()
 
 # detect keypoints inside the reference image
 kp_reference = sift.detect(reference_rgba)  # detection: individuo i keypoint
@@ -59,6 +56,7 @@ kp_reference, des_reference = sift.compute(reference_rgba, kp_reference)
 # des_reference = descriptor: descrive i kp secondo certe caratteristiche
 # kp_reference = keypoints effettivi, sono coordinate dell'immagine
 
+video_ar = []
 
 while True:
     # capture frame-by-frame
@@ -82,29 +80,11 @@ while True:
     # lista in cui vengono inseriti i keypoints matchati
     good = []
 
-    # Need to draw only good matches, so create a mask
-    # inizializzo a zero una lista di lunghezza/punti uguale a matches -> per DISEGNARE a video le linee di corrispondenza 
-    matchesMask = [[0, 0] for i in range(len(matches))]
-
     # ratio test defined by Lowe in his SIFT paper
     # rapporto tra kp ref e kp target < 0.7 -> permette d i defnire se le corrispondenze sono buone
     for i, (m, n) in enumerate(matches):  # m: kp reference, n: kp target
         if m.distance < 0.7 * n.distance:
-            matchesMask[i] = [1, 0] # a 1 la maschera (serve solo per il DISEGNO)
-            good.append(m) # se si -> metto aggiungo alla lista 
-
-    # ancora parametri per DISEGNARE a video le linee di corrispondenza
-    draw_params = dict(matchColor=(255, 0, 255),   # fucsia
-                       singlePointColor=(0, 255, 0), # verde
-                       matchesMask=matchesMask,
-                       flags=cv2.DrawMatchesFlags_DEFAULT)
-
-    # chiamo la funzione che DISEGNA i matches corretti
-    kp_matches = cv2.drawMatchesKnn(target_frame, kp_target, reference_rgba, kp_reference, matches, None, **draw_params)
-
-    cv2.imshow('kp correspondences', kp_matches)
-    if cv2.waitKey(1) == ord('q'):
-        break
+            good.append(m) # se si -> metto aggiungo alla lista
 
 # codice vero da qui
 
@@ -157,22 +137,20 @@ while True:
         # modifichiamo warped (che e' il layer trasformato di prospettiva) e ci piazziamo dentro i pixel del target frame (dato che altrimenti stamperemmo nero)
         warped[warp_mask] = target_frame[warp_mask]
 
-        # Displaying the result
-        cv2.imshow('Frame', warped)
-        if cv2.waitKey(1) == ord('q'):
-            break
+        video_ar.append(warped)
 
     else:
         print("Not enough matches are found - {}/{}".format(len(good), MIN_MATCH_COUNT))
         matchesMask = None
         break
 
-# When everything done, release the capture
-target.release()
-cv2.destroyAllWindows()
 
-'''
-img_train -> target_frame (scena - video)
-img_query -> reference (bishop - libro)
-img_ar -> layer (stregatto - augmented layer)
-'''
+out = cv2.VideoWriter('Augmented_Multiple_View_F2R.avi',cv2.VideoWriter_fourcc(*'DIVX'), 15, (w_t, h_t))
+ 
+for i in range(len(video_ar)):
+    out.write(video_ar[i])
+    ####
+    status=i/419*100
+    print("Building video:", round(status, 2), "%\n")
+    ####
+out.release()
