@@ -10,3 +10,12 @@
 `pip3 install opencv-contrib-python == 3.4.2.16`
 - Open your terminal and run:
 ```pip3 install jupyter```
+
+
+File inside Data folder needed both for F2R.py and F2F.py
+
+AugmentedLayer.png
+AugmentedLayerMask.png
+Multiple_View.avi
+ObjectMask.png
+ReferenceFrame.png

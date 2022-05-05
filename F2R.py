@@ -2,151 +2,123 @@
 import numpy as np
 import cv2
 
-# reference frame - model image -> foto del libro
+# load reference frame
 reference = cv2.imread('./Data/ReferenceFrame.png')
- 
-#portiamo la maschera da BGR a scala di grigio -> da 3 canali a un canale
+# converting mask from 3 to 1 channel
 reference_alpha_mask = cv2.cvtColor(cv2.imread('./Data/ObjectMask.PNG'), cv2.COLOR_BGR2GRAY)
-
-# splitto la reference in 3 canali
+# split reference in 3 channels
 b_r, g_r, r_r = cv2.split(reference)
-
-# creo lista in cui aggiungo il quarto canale alpha ai 3 canali appena splittati
-# alpha 255-> opacità massima
-#       0 -> opacità minima (diventa trasparente)
+# add the alpha channel
 rgba_r = [b_r, g_r, r_r, reference_alpha_mask]
-
-# https://docs.opencv.org/4.x/d2/de8/group__core__array.html#ga7d7b4d6c6ee504b30a20b1680029c7b4  merge
-
-# faccio il merge dei 4 canali e li salvo la nuova img "ReferenceFrameAlpha"
+# merge of the 4 channel
 cv2.imwrite('./Data/ReferenceFrameAlpha.png', cv2.merge(rgba_r, 4))
 reference_rgba = cv2.imread('./Data/ReferenceFrameAlpha.png')
 
 
-# target image - image under analysis -> (target video)
+# load target video
 target = cv2.VideoCapture('./Data/Multiple_View.avi')
 if (target.isOpened() == False):
-    print("Error opening video stream or file")
+    print("Error opening video stream")
 
 
-# augmented layer -> layer da soraimporre coi loghi
+# load augmented layer
 layer = cv2.imread('./Data/AugmentedLayer.PNG')
-# conversione da 3 canali a 1 canale
+# converting mask from 3 to 1 channel
 layer_alpha_mask = cv2.cvtColor(cv2.imread('./Data/AugmentedLayerMask.PNG'), cv2.COLOR_BGR2GRAY)
-# split del layer in 3 canali
+# split layer in 3 channels
 b_l, g_l, r_l = cv2.split(layer)
-# aggiungo canale alpha
+# add the alpha channel
 rgba_l = [b_l, g_l, r_l, layer_alpha_mask]
-# per come è fatta la imwrite salva in 3 canali, ma mantiene il canale alpha
+# merge of the 4 channel
 cv2.imwrite('./Data/AugmentedLayerAlpha.PNG', cv2.merge(rgba_l, 4))
 layer_rgba = cv2.imread('./Data/AugmentedLayerAlpha.PNG')
 
 
-# resize the layer so that it has the same shape of the reference image
-h_r, w_r, _ = reference_rgba.shape 
-layer_rgba_resized = layer_rgba[0:0 + h_r, 0:0 + w_r]
+# resizing the layer to the reference hight and width
+h_ref, w_ref, _ = reference_rgba.shape 
+layer_rgba_resized = layer_rgba[0:0 + h_ref, 0:0 + w_ref]
 
 
-# create detector -> trova i keypoints
-sift = cv2.SIFT_create()
+#sift = cv2.SIFT_create()
+sift = cv2.xfeatures2d.SIFT_create()
 
 # detect keypoints inside the reference image
-kp_reference = sift.detect(reference_rgba)  # detection: individuo i keypoint
+kp_reference = sift.detect(reference_rgba)
 kp_reference, des_reference = sift.compute(reference_rgba, kp_reference)
-# des_reference = descriptor: descrive i kp secondo certe caratteristiche
-# kp_reference = keypoints effettivi, sono coordinate dell'immagine
 
 video_ar = []
 
 while True:
-    # capture frame-by-frame
+    # read frame-by-frame
     success, target_frame = target.read()
 
-    # if frame is read correctly success is True
+    # control if frame is correctly read
     if not success:
         print("Can't receive frame (stream end?). Exiting ...")
         break
-
+	
+	# find current frame kp
     kp_target = sift.detect(target_frame)
     kp_target, des_target = sift.compute(target_frame, kp_target)
 
-    # FLANN BASED MATCHER: https://docs.opencv.org/4.x/dc/dc3/tutorial_py_matcher.html
+    # flann based matcher
     FLANN_INDEX_KDTREE = 1
     index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
     search_params = dict(checks=50)
-    flann = cv2.FlannBasedMatcher(index_params, search_params)  # create matcher
-    matches = flann.knnMatch(des_reference, des_target, k=2)  # k: Finds the k best matches for each descriptor from a query set.
-    
-    # lista in cui vengono inseriti i keypoints matchati
+    flann = cv2.FlannBasedMatcher(index_params, search_params)
+	# finds the k best matches for each descriptor from a query set
+    matches = flann.knnMatch(des_reference, des_target, k=2)
+
+    # list of matched keypoints
     good = []
 
-    # ratio test defined by Lowe in his SIFT paper
-    # rapporto tra kp ref e kp target < 0.7 -> permette d i defnire se le corrispondenze sono buone
+	# test good correspondence between kp_ref and kp_target as defined by Lowe in his SIFT paper
     for i, (m, n) in enumerate(matches):  # m: kp reference, n: kp target
         if m.distance < 0.7 * n.distance:
-            good.append(m) # se si -> metto aggiungo alla lista
+            good.append(m)
 
-# codice vero da qui
-
-    # Checking if we found the object
-    MIN_MATCH_COUNT = 4 # numero minimo di corrispondenze buone che accettiamo
+	# min number of good correspondence
+    MIN_MATCH_COUNT = 4
     if len(good) > MIN_MATCH_COUNT:
-        # trasformo in numeri reali i kp della reference e del target frame
-        '''
-        src_pts: prende da kp target tutti i punti che sono in good
-        dst_pts: stessa cosa
-
-        per la reshape:
-        https://stackoverflow.com/questions/47402445/need-help-in-understanding-error-for-cv2-undistortpoints/47403282#47403282
-        The short answer is you need to convert your points to a two-channel array of 32-bit floats as the error states:
-        CV_32FC2, i.e. a three-dimensional array with shape (n_points, 1, 2).
-        '''
+        # cast keypoints to real number 
         src_pts = np.float32([kp_reference[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
         dst_pts = np.float32([kp_target[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
         
-
-        # Getting the coordinates of the corners of our query object in the train image
-        # trovo la funzione di omografia -> fra pt sorgente e pt di destinazione
+		# find homography trough kp_reference and kp_target
         H, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-        matchesMask = mask.ravel().tolist() # si puo' anche togliere
         
-        # maschera il cambio di prospettiva
-        # corners (4) della reference -> li storizzo con il formato giusto
-        pts = np.float32([[0, 0], [0, h_r - 1], [w_r - 1, h_r - 1], [w_r - 1, 0]]).reshape(-1, 1, 2)
-        
-        # dst: intercetto i corner nel target tramite H e trovo i pt
-        # trasformazione di prospettiva tra target e reference
-        # prendo i corner della reference e tramite la H trovo la corrispondenca dei corner nel video (target frame)
-        dst = cv2.perspectiveTransform(pts, H) #corner sul frame
+        # reference corners as float
+        pts = np.float32([[0, 0], [0, h_ref - 1], [w_ref - 1, h_ref - 1], [w_ref - 1, 0]]).reshape(-1, 1, 2)
+        # take the reference corner and trough H find the correponding corner in the target frame
+        dst = cv2.perspectiveTransform(pts, H)
 
-        h_t, w_t, _ = target_frame.shape
-        h_l, w_l, _ = layer_rgba_resized.shape
+        h_frame, w_frame, _ = target_frame.shape
+        h_layer, w_layer, _ = layer_rgba_resized.shape
 
-        # Getting the homography to project img_ar on the surface of the query object.
-        # prendo i corner  del layer
-        pts_layer = np.float32([[0, 0], [0, h_l - 1], [w_l - 1, h_l - 1], [w_l - 1, 0]]).reshape(-1, 1, 2)
+        # layer corners as float
+        pts_layer = np.float32([[0, 0], [0, h_layer - 1], [w_layer - 1, h_layer - 1], [w_layer - 1, 0]]).reshape(-1, 1, 2)
+        # getting the homography to project the layer on the surface of the frame
         H = cv2.getPerspectiveTransform(pts_layer, dst)
 
-        # Warping the img_ar
-        # Cambiamo effettivamente la prospettiva
-        warped = cv2.warpPerspective(layer_rgba_resized, H, (w_t, h_t))
+        # warping the layer
+        warped = cv2.warpPerspective(layer_rgba_resized, H, (w_frame, h_frame))
 
-        # Restore previous values of the train images where the mask is black
-        # in warp_mask ci sono tutti i pt in cui la maschera e' trasparente (dove e' uguale a =0)
+        # Restore previous values of the frame where the warped layer is black
         warp_mask = np.equal(warped, 0)
-        # modifichiamo warped (che e' il layer trasformato di prospettiva) e ci piazziamo dentro i pixel del target frame (dato che altrimenti stamperemmo nero)
         warped[warp_mask] = target_frame[warp_mask]
 
         video_ar.append(warped)
 
     else:
-        print("Not enough matches are found - {}/{}".format(len(good), MIN_MATCH_COUNT))
-        matchesMask = None
+        print("Not enough matches found - {}/{}".format(len(good), MIN_MATCH_COUNT))
         break
 
 
-out = cv2.VideoWriter('Augmented_Multiple_View_F2R.avi',cv2.VideoWriter_fourcc(*'DIVX'), 15, (w_t, h_t))
- 
+out = cv2.VideoWriter('Augmented_Multiple_View_F2R.avi',cv2.VideoWriter_fourcc(*'DIVX'), 15, (w_frame, h_frame))
+
+for i in range(len(video_ar)):
+	print("i = ", i)
+
 for i in range(len(video_ar)):
     out.write(video_ar[i])
     ####
@@ -154,3 +126,4 @@ for i in range(len(video_ar)):
     print("Building video:", round(status, 2), "%\n")
     ####
 out.release()
+
