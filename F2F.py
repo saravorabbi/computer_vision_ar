@@ -34,8 +34,8 @@ layer_height, layer_weight = layer.shape[:2]
 ### layer to reference frame homography ###
 
 # find reference kp
-#sift = cv2.SIFT_create() # python 3.8
-sift = cv2.xfeatures2d.SIFT_create() # python 3.7
+#sift = cv2.SIFT_create() # from python 3.8 onwards
+sift = cv2.xfeatures2d.SIFT_create() # works with python 3.7. or lower
 
 # detect keypoints inside the reference image
 kp_reference = sift.detect(reference)
