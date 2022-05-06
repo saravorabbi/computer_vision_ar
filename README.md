@@ -11,6 +11,8 @@ Sara Vorabbi - sara.vorabbi@studio.unibo.it - 0001026226
 - F2R.py
 - F2F.py
 - README
+- Augmented_Multiple_View_F2R.avi
+- Augmented_Multiple_View_F2F.avi
 - Data/AugmentedLayer.png
 - Data/AugmentedLayerMask.png
 - Data/Multiple_View.avi
